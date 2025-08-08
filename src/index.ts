@@ -10,14 +10,7 @@ import type {
   TextEmbeddingParams,
   TokenizeTextParams,
 } from '@elizaos/core';
-import {
-  EventType,
-  logger,
-  ModelType,
-  safeReplacer,
-  ServiceType,
-  VECTOR_DIMS,
-} from '@elizaos/core';
+import { EventType, logger, ModelType, VECTOR_DIMS } from '@elizaos/core';
 import {
   generateObject,
   generateText,
@@ -787,7 +780,7 @@ export const openaiPlugin: Plugin = {
       }
     },
     [ModelType.TRANSCRIPTION]: async (runtime: IAgentRuntime, audioBuffer: Buffer) => {
-      logger.log('audioBuffer', audioBuffer);
+      logger.log({ audioBuffer }, 'audioBuffer');
 
       const modelName = 'whisper-1';
       logger.log(`[OpenAI] Using TRANSCRIPTION model: ${modelName}`);
@@ -818,7 +811,7 @@ export const openaiPlugin: Plugin = {
         const responseClone = response.clone();
         const rawResponseBody = await responseClone.text();
 
-        logger.log('response', response);
+        logger.log({ response }, 'response');
 
         if (!response.ok) {
           throw new Error(`Failed to transcribe audio: ${response.statusText}`);
@@ -865,7 +858,10 @@ export const openaiPlugin: Plugin = {
               },
             });
             const data = await response.json();
-            logger.log('Models Available:', (data as { data?: unknown[] })?.data?.length ?? 'N/A');
+            logger.log(
+              { data: (data as { data?: unknown[] })?.data?.length ?? 'N/A' },
+              'Models Available'
+            );
             if (!response.ok) {
               throw new Error(`Failed to validate OpenAI API key: ${response.statusText}`);
             }
@@ -878,7 +874,7 @@ export const openaiPlugin: Plugin = {
               const embedding = await runtime.useModel(ModelType.TEXT_EMBEDDING, {
                 text: 'Hello, world!',
               });
-              logger.log('embedding', embedding);
+              logger.log({ embedding }, 'embedding');
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
               logger.error(`Error in test_text_embedding: ${message}`);
@@ -896,7 +892,7 @@ export const openaiPlugin: Plugin = {
               if (text.length === 0) {
                 throw new Error('Failed to generate text');
               }
-              logger.log('generated with test_text_large:', text);
+              logger.log({ text }, 'generated with test_text_large');
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
               logger.error(`Error in test_text_large: ${message}`);
@@ -914,7 +910,7 @@ export const openaiPlugin: Plugin = {
               if (text.length === 0) {
                 throw new Error('Failed to generate text');
               }
-              logger.log('generated with test_text_small:', text);
+              logger.log({ text }, 'generated with test_text_small');
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
               logger.error(`Error in test_text_small: ${message}`);
@@ -932,7 +928,7 @@ export const openaiPlugin: Plugin = {
                 n: 1,
                 size: '1024x1024',
               });
-              logger.log('generated with test_image_generation:', image);
+              logger.log({ image }, 'generated with test_image_generation');
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
               logger.error(`Error in test_image_generation: ${message}`);
@@ -957,7 +953,7 @@ export const openaiPlugin: Plugin = {
                   'title' in result &&
                   'description' in result
                 ) {
-                  logger.log('Image description:', result);
+                  logger.log({ result }, 'Image description');
                 } else {
                   logger.error('Invalid image description result format:', result);
                 }
@@ -984,7 +980,7 @@ export const openaiPlugin: Plugin = {
                 ModelType.TRANSCRIPTION,
                 Buffer.from(new Uint8Array(arrayBuffer))
               );
-              logger.log('generated with test_transcription:', transcription);
+              logger.log({ transcription }, 'generated with test_transcription');
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
               logger.error(`Error in test_transcription: ${message}`);
@@ -1000,7 +996,7 @@ export const openaiPlugin: Plugin = {
             if (!Array.isArray(tokens) || tokens.length === 0) {
               throw new Error('Failed to tokenize text: expected non-empty array of tokens');
             }
-            logger.log('Tokenized output:', tokens);
+            logger.log({ tokens }, 'Tokenized output');
           },
         },
         {
@@ -1014,7 +1010,7 @@ export const openaiPlugin: Plugin = {
                 `Decoded text does not match original. Expected "${prompt}", got "${decodedText}"`
               );
             }
-            logger.log('Decoded text:', decodedText);
+            logger.log({ decodedText }, 'Decoded text');
           },
         },
         {
