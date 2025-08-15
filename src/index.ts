@@ -406,12 +406,13 @@ export const openaiPlugin: Plugin = {
             }
 
             if (usage) {
+              const resolvedUsage = await usage;
               yield {
                 event: 'usage',
                 tokens: {
-                  prompt: usage.promptTokens,
-                  completion: usage.completionTokens,
-                  total: usage.totalTokens,
+                  prompt: resolvedUsage.promptTokens,
+                  completion: resolvedUsage.completionTokens,
+                  total: resolvedUsage.totalTokens,
                 },
               } as any;
             }
@@ -470,12 +471,13 @@ export const openaiPlugin: Plugin = {
             }
 
             if (usage) {
+              const resolvedUsage = await usage;
               yield {
                 event: 'usage',
                 tokens: {
-                  prompt: usage.promptTokens,
-                  completion: usage.completionTokens,
-                  total: usage.totalTokens,
+                  prompt: resolvedUsage.promptTokens,
+                  completion: resolvedUsage.completionTokens,
+                  total: resolvedUsage.totalTokens,
                 },
               } as any;
             }
