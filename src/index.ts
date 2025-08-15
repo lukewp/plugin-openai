@@ -14,6 +14,7 @@ import { EventType, logger, ModelType, VECTOR_DIMS } from '@elizaos/core';
 import {
   generateObject,
   generateText,
+  streamText,
   JSONParseError,
   type JSONValue,
   type LanguageModelUsage,
@@ -362,6 +363,171 @@ export const openaiPlugin: Plugin = {
     OPENAI_EXPERIMENTAL_TELEMETRY: process.env.OPENAI_EXPERIMENTAL_TELEMETRY,
   },
   async init(_config, runtime) {
+    // Register streaming text models (TEXT_SMALL, TEXT_LARGE)
+    try {
+      runtime.registerModelStream(
+        ModelType.TEXT_SMALL,
+        async function* (params: GenerateTextParams) {
+          const openai = createOpenAIClient(runtime);
+          const modelName = getSmallModel(runtime);
+          const experimentalTelemetry = getExperimentalTelemetry(runtime);
+          const system = runtime.character.system ?? undefined;
+
+          const {
+            prompt,
+            stopSequences = [],
+            maxTokens = 8192,
+            temperature = 0.7,
+            frequencyPenalty = 0.7,
+            presencePenalty = 0.7,
+          } = params;
+
+          logger.log(`[OpenAI] [stream] Using TEXT_SMALL model: ${modelName}`);
+          let fullText = '';
+          try {
+            const { textStream, usage } = await streamText({
+              model: openai.languageModel(modelName),
+              prompt,
+              system,
+              temperature,
+              maxTokens,
+              frequencyPenalty,
+              presencePenalty,
+              stopSequences,
+              experimental_telemetry: { isEnabled: experimentalTelemetry },
+            });
+
+            for await (const delta of textStream) {
+              const s = String(delta ?? '');
+              if (s.length > 0) {
+                fullText += s;
+                yield { event: 'delta', delta: s } as any;
+              }
+            }
+
+            if (usage) {
+              yield {
+                event: 'usage',
+                tokens: {
+                  prompt: usage.promptTokens,
+                  completion: usage.completionTokens,
+                  total: usage.totalTokens,
+                },
+              } as any;
+            }
+
+            yield { event: 'finish', output: fullText } as any;
+          } catch (error) {
+            yield { event: 'error', error } as any;
+          }
+        },
+        'openai',
+        100
+      );
+    } catch (err) {
+      logger.warn(`[OpenAI] Failed to register TEXT_SMALL streaming: ${String(err)}`);
+    }
+
+    try {
+      runtime.registerModelStream(
+        ModelType.TEXT_LARGE,
+        async function* (params: GenerateTextParams) {
+          const openai = createOpenAIClient(runtime);
+          const modelName = getLargeModel(runtime);
+          const experimentalTelemetry = getExperimentalTelemetry(runtime);
+          const system = runtime.character.system ?? undefined;
+
+          const {
+            prompt,
+            stopSequences = [],
+            maxTokens = 8192,
+            temperature = 0.7,
+            frequencyPenalty = 0.7,
+            presencePenalty = 0.7,
+          } = params;
+
+          logger.log(`[OpenAI] [stream] Using TEXT_LARGE model: ${modelName}`);
+          let fullText = '';
+          try {
+            const { textStream, usage } = await streamText({
+              model: openai.languageModel(modelName),
+              prompt,
+              system,
+              temperature,
+              maxTokens,
+              frequencyPenalty,
+              presencePenalty,
+              stopSequences,
+              experimental_telemetry: { isEnabled: experimentalTelemetry },
+            });
+
+            for await (const delta of textStream) {
+              const s = String(delta ?? '');
+              if (s.length > 0) {
+                fullText += s;
+                yield { event: 'delta', delta: s } as any;
+              }
+            }
+
+            if (usage) {
+              yield {
+                event: 'usage',
+                tokens: {
+                  prompt: usage.promptTokens,
+                  completion: usage.completionTokens,
+                  total: usage.totalTokens,
+                },
+              } as any;
+            }
+
+            yield { event: 'finish', output: fullText } as any;
+          } catch (error) {
+            yield { event: 'error', error } as any;
+          }
+        },
+        'openai',
+        100
+      );
+    } catch (err) {
+      logger.warn(`[OpenAI] Failed to register TEXT_LARGE streaming: ${String(err)}`);
+    }
+
+    // Streaming TTS: stream audio chunks if server supports streaming response
+    try {
+      runtime.registerModelStream(
+        ModelType.TEXT_TO_SPEECH,
+        async function* (text: string) {
+          try {
+            const resBody = await fetchTextToSpeech(runtime, text);
+            if (!resBody || typeof (resBody as any).getReader !== 'function') {
+              // Not a stream; emit a single finish chunk
+              yield { event: 'finish', output: resBody } as any;
+              return;
+            }
+            const reader = (resBody as any).getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) {
+                  yield { event: 'audio', chunk: value } as any;
+                }
+              }
+            } finally {
+              reader.releaseLock?.();
+            }
+            yield { event: 'finish', output: null } as any;
+          } catch (error) {
+            yield { event: 'error', error } as any;
+          }
+        },
+        'openai',
+        90
+      );
+    } catch (err) {
+      logger.warn(`[OpenAI] Failed to register TEXT_TO_SPEECH streaming: ${String(err)}`);
+    }
+
     // do check in the background
     new Promise<void>(async (resolve) => {
       resolve();
