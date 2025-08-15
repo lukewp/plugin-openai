@@ -9,7 +9,10 @@ import type {
   Plugin,
   TextEmbeddingParams,
   TokenizeTextParams,
+  type TextStreamChunk,
+  type TextToSpeechStreamChunk,
 } from '@elizaos/core';
+
 import { EventType, logger, ModelType, VECTOR_DIMS } from '@elizaos/core';
 import {
   generateObject,
@@ -43,7 +46,7 @@ function getSetting(
  * @returns The resolved base URL for OpenAI API requests.
  */
 function getBaseURL(runtime: IAgentRuntime): string {
-  const baseURL = getSetting(runtime, 'OPENAI_BASE_URL', 'https://api.openai.com/v1') as string;
+  const baseURL = String(getSetting(runtime, 'OPENAI_BASE_URL', 'https://api.openai.com/v1'));
   logger.debug(`[OpenAI] Default base URL: ${baseURL}`);
   return baseURL;
 }
@@ -98,7 +101,7 @@ function getEmbeddingApiKey(runtime: IAgentRuntime): string | undefined {
 function getSmallModel(runtime: IAgentRuntime): string {
   return (
     getSetting(runtime, 'OPENAI_SMALL_MODEL') ??
-    (getSetting(runtime, 'SMALL_MODEL', 'gpt-4o-mini') as string)
+    String(getSetting(runtime, 'SMALL_MODEL', 'gpt-4o-mini'))
   );
 }
 
@@ -111,7 +114,7 @@ function getSmallModel(runtime: IAgentRuntime): string {
 function getLargeModel(runtime: IAgentRuntime): string {
   return (
     getSetting(runtime, 'OPENAI_LARGE_MODEL') ??
-    (getSetting(runtime, 'LARGE_MODEL', 'gpt-4o') as string)
+    String(getSetting(runtime, 'LARGE_MODEL', 'gpt-4o'))
   );
 }
 
@@ -194,7 +197,7 @@ async function detokenizeText(model: ModelTypeName, tokens: number[]) {
 async function generateObjectByModelType(
   runtime: IAgentRuntime,
   params: ObjectGenerationParams,
-  modelType: string,
+  modelType: ModelTypeName,
   getModelFn: (runtime: IAgentRuntime) => string
 ): Promise<JSONValue> {
   const openai = createOpenAIClient(runtime);
@@ -219,7 +222,7 @@ async function generateObjectByModelType(
     });
 
     if (usage) {
-      emitModelUsageEvent(runtime, modelType as ModelTypeName, params.prompt, usage);
+      emitModelUsageEvent(runtime, modelType, params.prompt, usage);
     }
     return object;
   } catch (error: unknown) {
@@ -365,9 +368,20 @@ export const openaiPlugin: Plugin = {
   async init(_config, runtime) {
     // Register streaming text models (TEXT_SMALL, TEXT_LARGE)
     try {
-      runtime.registerModelStream(
+      const runtimeWithStreaming = runtime as IAgentRuntime & {
+        registerModelStream?: <T>(
+          modelType: ModelTypeName,
+          handler: (params: T) => AsyncIterable<unknown> | Promise<AsyncIterable<unknown>>,
+          provider: string,
+          priority?: number
+        ) => void
+      };
+      if (!runtimeWithStreaming.registerModelStream) {
+        logger.warn('[OpenAI] Streaming API not supported by this runtime version; skipping TEXT_SMALL stream registration');
+      } else {
+        runtimeWithStreaming.registerModelStream(
         ModelType.TEXT_SMALL,
-        async function* (params: GenerateTextParams) {
+        async function* (params: GenerateTextParams): AsyncGenerator<TextStreamChunk> {
           const openai = createOpenAIClient(runtime);
           const modelName = getSmallModel(runtime);
           const experimentalTelemetry = getExperimentalTelemetry(runtime);
@@ -401,7 +415,7 @@ export const openaiPlugin: Plugin = {
               const s = String(delta ?? '');
               if (s.length > 0) {
                 fullText += s;
-                yield { event: 'delta', delta: s } as any;
+                yield { event: 'delta', delta: s };
               }
             }
 
@@ -414,25 +428,37 @@ export const openaiPlugin: Plugin = {
                   completion: resolvedUsage.completionTokens,
                   total: resolvedUsage.totalTokens,
                 },
-              } as any;
+              };
             }
 
-            yield { event: 'finish', output: fullText } as any;
+            yield { event: 'finish', output: fullText };
           } catch (error) {
-            yield { event: 'error', error } as any;
+            yield { event: 'error', error };
           }
         },
-        'openai',
-        100
-      );
+          'openai',
+          100
+        );
+      }
     } catch (err) {
       logger.warn(`[OpenAI] Failed to register TEXT_SMALL streaming: ${String(err)}`);
     }
 
     try {
-      runtime.registerModelStream(
+      const runtimeWithStreaming = runtime as IAgentRuntime & {
+        registerModelStream?: <T>(
+          modelType: ModelTypeName,
+          handler: (params: T) => AsyncIterable<unknown> | Promise<AsyncIterable<unknown>>,
+          provider: string,
+          priority?: number
+        ) => void
+      };
+      if (!runtimeWithStreaming.registerModelStream) {
+        logger.warn('[OpenAI] Streaming API not supported by this runtime version; skipping TEXT_LARGE stream registration');
+      } else {
+        runtimeWithStreaming.registerModelStream(
         ModelType.TEXT_LARGE,
-        async function* (params: GenerateTextParams) {
+        async function* (params: GenerateTextParams): AsyncGenerator<TextStreamChunk> {
           const openai = createOpenAIClient(runtime);
           const modelName = getLargeModel(runtime);
           const experimentalTelemetry = getExperimentalTelemetry(runtime);
@@ -466,7 +492,7 @@ export const openaiPlugin: Plugin = {
               const s = String(delta ?? '');
               if (s.length > 0) {
                 fullText += s;
-                yield { event: 'delta', delta: s } as any;
+                yield { event: 'delta', delta: s };
               }
             }
 
@@ -479,53 +505,67 @@ export const openaiPlugin: Plugin = {
                   completion: resolvedUsage.completionTokens,
                   total: resolvedUsage.totalTokens,
                 },
-              } as any;
+              };
             }
 
-            yield { event: 'finish', output: fullText } as any;
+            yield { event: 'finish', output: fullText };
           } catch (error) {
-            yield { event: 'error', error } as any;
+            yield { event: 'error', error };
           }
         },
-        'openai',
-        100
-      );
+          'openai',
+          100
+        );
+      }
     } catch (err) {
       logger.warn(`[OpenAI] Failed to register TEXT_LARGE streaming: ${String(err)}`);
     }
 
     // Streaming TTS: stream audio chunks if server supports streaming response
     try {
-      runtime.registerModelStream(
+      const runtimeWithStreaming = runtime as IAgentRuntime & {
+        registerModelStream?: <T>(
+          modelType: ModelTypeName,
+          handler: (params: T) => AsyncIterable<unknown> | Promise<AsyncIterable<unknown>>,
+          provider: string,
+          priority?: number
+        ) => void
+      };
+      if (!runtimeWithStreaming.registerModelStream) {
+        logger.warn('[OpenAI] Streaming API not supported by this runtime version; skipping TEXT_TO_SPEECH stream registration');
+      } else {
+        runtimeWithStreaming.registerModelStream(
         ModelType.TEXT_TO_SPEECH,
-        async function* (text: string) {
+        async function* (params: { text: string } | string): AsyncGenerator<TextToSpeechStreamChunk> {
+            const text = typeof params === 'string' ? params : params.text;
           try {
             const resBody = await fetchTextToSpeech(runtime, text);
-            if (!resBody || typeof (resBody as any).getReader !== 'function') {
+            if (!resBody || !('getReader' in resBody) || typeof resBody.getReader !== 'function') {
               // Not a stream; emit a single finish chunk
-              yield { event: 'finish', output: resBody } as any;
+              yield { event: 'finish', output: resBody as unknown as Buffer };
               return;
             }
-            const reader = (resBody as any).getReader();
+            const reader = (resBody as ReadableStream<Uint8Array>).getReader();
             try {
               while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 if (value) {
-                  yield { event: 'audio', chunk: value } as any;
+                  yield { event: 'audio', chunk: value };
                 }
               }
             } finally {
               reader.releaseLock?.();
             }
-            yield { event: 'finish', output: null } as any;
+            yield { event: 'finish', output: null };
           } catch (error) {
-            yield { event: 'error', error } as any;
+            yield { event: 'error', error };
           }
         },
-        'openai',
-        90
-      );
+          'openai',
+          90
+        );
+      }
     } catch (err) {
       logger.warn(`[OpenAI] Failed to register TEXT_TO_SPEECH streaming: ${String(err)}`);
     }
@@ -860,7 +900,7 @@ export const openaiPlugin: Plugin = {
       }
 
       try {
-        const requestBody: Record<string, any> = {
+        const requestBody = {
           model: modelName,
           messages: messages,
           max_tokens: maxTokens,
